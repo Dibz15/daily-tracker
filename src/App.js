@@ -4,6 +4,7 @@ import { GoogleOAuthProvider, GoogleLogin } from '@react-oauth/google';
 import axios from 'axios';
 
 const CLIENT_ID = process.env.REACT_APP_GOOGLE_CLIENT_ID;
+const API_KEY = process.env.REACT_APP_GOOGLE_API_KEY;
 const SCOPES = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file';
 
 const SymptomInput = ({ label, value, onChange }) => (
@@ -45,7 +46,7 @@ const DailyTracker = () => {
   const initializeGapiClient = () => {
     window.gapi.client
       .init({
-        apiKey: process.env.REACT_APP_GOOGLE_API_KEY,
+        apiKey: API_KEY,
         discoveryDocs: [
           'https://www.googleapis.com/discovery/v1/apis/drive/v3/rest',
           'https://sheets.googleapis.com/$discovery/rest?version=v4',
@@ -153,7 +154,7 @@ const DailyTracker = () => {
         const range = 'Sheet1!A1';
         const values = [
           [
-            'Date','S','S/M/','M','M/L','L','L/XL','XL','XXL',
+            'Date','S','S/M','M','M/L','L','L/XL','XL','XXL',
             'Overwhelm','Meltdown',
           ],
         ];
