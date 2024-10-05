@@ -4,7 +4,7 @@ import { GoogleOAuthProvider, GoogleLogin } from '@react-oauth/google';
 import axios from 'axios';
 
 const CLIENT_ID = process.env.REACT_APP_GOOGLE_CLIENT_ID;
-const SCOPES = 'https://www.googleapis.com/auth/drive.file';
+const SCOPES = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file';
 
 const SymptomInput = ({ label, value, onChange }) => (
   <div className="mb-4">
@@ -46,7 +46,10 @@ const DailyTracker = () => {
     window.gapi.client
       .init({
         apiKey: process.env.REACT_APP_GOOGLE_API_KEY,
-        discoveryDocs: ['https://www.googleapis.com/discovery/v1/apis/drive/v3/rest'],
+        discoveryDocs: [
+          'https://www.googleapis.com/discovery/v1/apis/drive/v3/rest',
+          'https://sheets.googleapis.com/$discovery/rest?version=v4',
+        ],
       })
       .then(() => {
         console.log('GAPI client initialized.');
@@ -68,29 +71,46 @@ const DailyTracker = () => {
         setAccessToken(tokenResponse.access_token);
       },
     });
-    tokenClient.requestAccessToken({ prompt: 'consent' });
+    // Request access token
+    // tokenClient.requestAccessToken({ prompt: 'consent' });
+    if (window.gapi.client.getToken() === null) {
+      // Prompt the user to select a Google Account and ask for consent to share their data
+      // when establishing a new session.
+      tokenClient.requestAccessToken({prompt: 'consent'});
+    } else {
+      // Skip display of account chooser and consent dialog for an existing session.
+      tokenClient.requestAccessToken({prompt: ''});
+    }
   };
 
   const handleSymptomChange = (symptom, value) => {
     setSymptoms(prev => ({ ...prev, [symptom]: value }));
   };
 
-  const handleSignInSuccess = () => {
-    tokenClient = window.google.accounts.oauth2.initTokenClient({
-      client_id: CLIENT_ID,
-      scope: SCOPES,
-      callback: (tokenResponse) => {
-        if (tokenResponse.error) {
-          console.error('Error during authentication', tokenResponse);
-          return;
-        }
-        setIsSignedIn(true);
-        setAccessToken(tokenResponse.access_token);
-      },
-    });
-    // Request access token
-    tokenClient.requestAccessToken({ prompt: 'consent' });
-  };
+  // const handleSignInSuccess = () => {
+  //   tokenClient = window.google.accounts.oauth2.initTokenClient({
+  //     client_id: CLIENT_ID,
+  //     scope: SCOPES,
+  //     callback: (tokenResponse) => {
+  //       if (tokenResponse.error) {
+  //         console.error('Error during authentication', tokenResponse);
+  //         return;
+  //       }
+  //       setIsSignedIn(true);
+  //       setAccessToken(tokenResponse.access_token);
+  //     },
+  //   });
+  //   // Request access token
+  //   // tokenClient.requestAccessToken({ prompt: 'consent' });
+  //   if (window.gapi.client.getToken() === null) {
+  //     // Prompt the user to select a Google Account and ask for consent to share their data
+  //     // when establishing a new session.
+  //     tokenClient.requestAccessToken({prompt: 'consent'});
+  //   } else {
+  //     // Skip display of account chooser and consent dialog for an existing session.
+  //     tokenClient.requestAccessToken({prompt: ''});
+  //   }
+  // };
 
   const handleSignOut = () => {
     const token = window.gapi.client.getToken();
@@ -109,64 +129,73 @@ const DailyTracker = () => {
       alert('Please sign in first');
       return;
     }
-
     console.log('Submitted data:', { ...symptoms, overwhelm, meltdown, date, timestamp: new Date() });
-
+    const sheetName = 'Daily Symptom Tracker';
     try {
-      // Check for existing file
-      const fileSearchResponse = await axios.get('https://www.googleapis.com/drive/v3/files', {
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-        },
-        params: {
-          q: "name='tracker_app.csv'",
-          fields: 'files(id, name)',
-        },
-      });
-
-      let fileId;
-      const existingFiles = fileSearchResponse.data.files;
-
-      // CSV content for symptoms tracking
-      const csvContent = 'Date,S,S/M,M,M/L,L,L/XL,XL,XXL,Overwhelm,Meltdown\n' +
-        `${date},${symptoms['S']},${symptoms['S/M']},${symptoms['M']},${symptoms['M/L']},${symptoms['L']},${symptoms['L/XL']},${symptoms['XL']},${symptoms['XXL']},${overwhelm},${meltdown}\n`;
-
-      if (existingFiles.length > 0) {
-        fileId = existingFiles[0].id;
-        console.log('Found existing file with ID:', fileId);
-
-        // For simplicity, we're overwriting the file content, not appending.
-        const file = new Blob([csvContent], { type: 'text/csv' });
-        const form = new FormData();
-        form.append('file', file);
-
-        await axios.patch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`, file, {
-          headers: {
-            'Authorization': `Bearer ${accessToken}`,
-            'Content-Type': 'text/csv',
-          },
-        });
-
+      const driveResponse = await window.gapi.client.drive.files.list({
+        q: `name='${sheetName}'`,
+        fields: 'files(id, name)'
+      })
+      let spreadsheetId;
+      const files = driveResponse.result.files;
+      if (files && files.length > 0) {
+        spreadsheetId = files[0].id; 
+        console.log('Found existing spreadsheet:', spreadsheetId);
       } else {
-        // Create a new file
-        const fileMetadata = {
-          name: 'tracker_app.csv',
-          mimeType: 'text/csv',
-        };
-        const file = new Blob([csvContent], { type: 'text/csv' });
-        const form = new FormData();
-        form.append('metadata', new Blob([JSON.stringify(fileMetadata)], { type: 'application/json' }));
-        form.append('file', file);
-
-        const driveResponse = await axios.post('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', form, {
-          headers: {
-            'Authorization': `Bearer ${accessToken}`,
+        const createResponse = await window.gapi.client.sheets.spreadsheets.create({
+          properties: {
+            title: sheetName,
           },
         });
-        fileId = driveResponse.data.id;
-        console.log('File uploaded successfully, File ID:', fileId);
+        spreadsheetId = createResponse.result.spreadsheetId;
+        console.log('Created new spreadsheet:', spreadsheetId);
+              // Prepare data to append
+        const range = 'Sheet1!A1';
+        const values = [
+          [
+            'Date','S','S/M/','M','M/L','L','L/XL','XL','XXL',
+            'Overwhelm','Meltdown',
+          ],
+        ];
+
+        await window.gapi.client.sheets.spreadsheets.values.append({
+          spreadsheetId: spreadsheetId,
+          range: range,
+          valueInputOption: 'USER_ENTERED',
+          resource: {
+            values: values
+          }
+        });
+        console.log('Added header to sheet')
       }
 
+      // Prepare data to append
+      const range = 'Sheet1!A1';
+      const values = [
+        [
+          date,
+          symptoms['S'],
+          symptoms['S/M'],
+          symptoms['M'],
+          symptoms['M/L'],
+          symptoms['L'],
+          symptoms['L/XL'],
+          symptoms['XL'],
+          symptoms['XXL'],
+          overwhelm,
+          meltdown,
+        ],
+      ];
+
+      await window.gapi.client.sheets.spreadsheets.values.append({
+        spreadsheetId: spreadsheetId,
+        range: range,
+        valueInputOption: 'USER_ENTERED',
+        resource: {
+          values: values
+        }
+      });
+      console.log(`Appended data ${values} to sheet.`)
       setSubmitted(true);
       setTimeout(() => setSubmitted(false), 3000);
       // Reset form
