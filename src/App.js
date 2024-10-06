@@ -100,16 +100,17 @@ const DailyTracker = () => {
     }
   }, []); // useCallback to stabilize reference
 
-  // Function to check if the access token is still valid
-  const checkTokenValidity = () => {
-    if (tokenExpiry && Date.now() >= tokenExpiry) {
-      // Token is expired, request a new one
-      tokenClientRef.current.requestAccessToken({ prompt: '' });
-    }
-  };
+
 
   // Periodically check token validity
   useEffect(() => {
+      // Function to check if the access token is still valid
+    const checkTokenValidity = () => {
+      if (tokenExpiry && Date.now() >= tokenExpiry) {
+        // Token is expired, request a new one
+        tokenClientRef.current.requestAccessToken({ prompt: '' });
+      }
+    };
     // Check token validity when the component mounts
     checkTokenValidity();
 
