@@ -131,7 +131,7 @@ const DailyTracker = () => {
       return;
     }
     console.log('Submitted data:', { ...symptoms, overwhelm, meltdown, date, timestamp: new Date() });
-    const sheetName = 'Daily Symptom Tracker';
+    const sheetName = 'Daily Event Tracker';
     try {
       const driveResponse = await window.gapi.client.drive.files.list({
         q: `name='${sheetName}'`,
@@ -222,6 +222,21 @@ const DailyTracker = () => {
           <div>
             <div>
               <h2>Fill out your symptoms</h2>
+              <div className="mb-4">
+                <label className="block text-[#2596be] text-sm font-bold mb-2" htmlFor="date">
+                  Date
+                </label>
+                <div className="relative">
+                  <input
+                    type="date"
+                    id="date"
+                    value={date}
+                    onChange={(e) => setDate(e.target.value)}
+                    className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline bg-gray-800 border-[#2596be] text-[#2596be] pr-10"
+                  />
+                  <Calendar className="absolute right-3 top-2 text-[#2596be]" size={20} />
+                </div>
+              </div>
               {Object.keys(symptoms).map((symptom) => (
                 <div key={symptom} className="mb-4">
                   <label className="block text-[#2596be] text-sm font-bold mb-2" htmlFor={symptom}>
