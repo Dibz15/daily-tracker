@@ -1,27 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { AlertCircle, Calendar } from 'lucide-react';
-import { GoogleOAuthProvider, GoogleLogin } from '@react-oauth/google';
-import axios from 'axios';
+// import { GoogleOAuthProvider, GoogleLogin } from '@react-oauth/google';
+// import axios from 'axios';
 
 const CLIENT_ID = process.env.REACT_APP_GOOGLE_CLIENT_ID;
 const API_KEY = process.env.REACT_APP_GOOGLE_API_KEY;
 const SCOPES = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file';
-
-const SymptomInput = ({ label, value, onChange }) => (
-  <div className="mb-4">
-    <label className="block text-[#2596be] text-sm font-bold mb-2" htmlFor={label}>
-      {label}
-    </label>
-    <input
-      className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline bg-gray-800 border-[#2596be] text-[#2596be]"
-      id={label}
-      type="number"
-      min="0"
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-    />
-  </div>
-);
 
 const DailyTracker = () => {
   const [symptoms, setSymptoms] = useState({
@@ -35,13 +19,8 @@ const DailyTracker = () => {
   const [isSignedIn, setIsSignedIn] = useState(false);
   const [accessToken, setAccessToken] = useState(null);
   
-  let tokenClient;
-
-  useEffect(() => {
-    // Load the gapi client and initialize the Drive API
-    window.gapi.load('client', initializeGapiClient);
-    window.onload = () => gisLoaded();
-  }, []);
+  // let tokenClient;
+  const tokenClientRef = useRef(null);
 
   const initializeGapiClient = () => {
     window.gapi.client
@@ -59,8 +38,8 @@ const DailyTracker = () => {
   };
 
   // Initialize the Google Identity Services (GIS) client for OAuth
-  const gisLoaded = () => {
-    tokenClient = window.google.accounts.oauth2.initTokenClient({
+  const gisLoaded = useCallback(() => {
+    tokenClientRef.current = window.google.accounts.oauth2.initTokenClient({
       client_id: CLIENT_ID,
       scope: SCOPES,
       callback: (tokenResponse) => {
@@ -68,50 +47,41 @@ const DailyTracker = () => {
           console.error('Error during authentication', tokenResponse);
           return;
         }
+        localStorage.setItem('accessToken', tokenResponse.access_token);
         setIsSignedIn(true);
         setAccessToken(tokenResponse.access_token);
       },
     });
+
     // Request access token
-    // tokenClient.requestAccessToken({ prompt: 'consent' });
-    if (window.gapi.client.getToken() === null) {
-      // Prompt the user to select a Google Account and ask for consent to share their data
-      // when establishing a new session.
-      tokenClient.requestAccessToken({prompt: 'consent'});
+    const storedToken = localStorage.getItem('accessToken');
+    if (storedToken) {
+      // If a token is found in localStorage, use it to set the user's state
+      setIsSignedIn(true);
+      setAccessToken(storedToken);
+      window.gapi.client.setToken({ access_token: storedToken });
+    } else if (window.gapi.client.getToken() === null) {
+      tokenClientRef.current.requestAccessToken({ prompt: 'consent' });
     } else {
-      // Skip display of account chooser and consent dialog for an existing session.
-      tokenClient.requestAccessToken({prompt: ''});
+      tokenClientRef.current.requestAccessToken({ prompt: '' });
     }
-  };
+  }, []); // useCallback to stabilize reference
+
+  useEffect(() => {
+    window.gapi.load('client', () => {
+      initializeGapiClient();
+      gisLoaded(); // Directly call gisLoaded here
+    });
+
+    return () => {
+      window.onload = null; // Optional cleanup if using window.onload
+    };
+  }, [gisLoaded]); // Include gisLoaded in the dependency array
+
 
   const handleSymptomChange = (symptom, value) => {
     setSymptoms(prev => ({ ...prev, [symptom]: value }));
   };
-
-  // const handleSignInSuccess = () => {
-  //   tokenClient = window.google.accounts.oauth2.initTokenClient({
-  //     client_id: CLIENT_ID,
-  //     scope: SCOPES,
-  //     callback: (tokenResponse) => {
-  //       if (tokenResponse.error) {
-  //         console.error('Error during authentication', tokenResponse);
-  //         return;
-  //       }
-  //       setIsSignedIn(true);
-  //       setAccessToken(tokenResponse.access_token);
-  //     },
-  //   });
-  //   // Request access token
-  //   // tokenClient.requestAccessToken({ prompt: 'consent' });
-  //   if (window.gapi.client.getToken() === null) {
-  //     // Prompt the user to select a Google Account and ask for consent to share their data
-  //     // when establishing a new session.
-  //     tokenClient.requestAccessToken({prompt: 'consent'});
-  //   } else {
-  //     // Skip display of account chooser and consent dialog for an existing session.
-  //     tokenClient.requestAccessToken({prompt: ''});
-  //   }
-  // };
 
   const handleSignOut = () => {
     const token = window.gapi.client.getToken();
@@ -120,7 +90,8 @@ const DailyTracker = () => {
         window.gapi.client.setToken('');
         setIsSignedIn(false);
         setAccessToken(null);
-        // setFiles([]);
+        // Clear local storage to remove token
+        localStorage.removeItem('accessToken');
       });
     }
   };
@@ -198,7 +169,7 @@ const DailyTracker = () => {
       });
       console.log(`Appended data ${values} to sheet.`)
       setSubmitted(true);
-      setTimeout(() => setSubmitted(false), 3000);
+      setTimeout(() => setSubmitted(false), 5000);
       // Reset form
       setSymptoms({S: '0', 'S/M': '0', M: '0', 'M/L': '0', L: '0', 'L/XL': '0', XL: '0', XXL: '0'});
       setOverwhelm(false);
