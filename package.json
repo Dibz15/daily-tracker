@@ -2,6 +2,7 @@
   "name": "symptom-tracker",
   "version": "0.1.0",
   "private": true,
+  "homepage": "https://dibz15.github.io/daily-tracker",
   "dependencies": {
     "@react-oauth/google": "^0.12.1",
     "@testing-library/jest-dom": "^5.17.0",
