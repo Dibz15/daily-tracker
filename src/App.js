@@ -18,9 +18,36 @@ const DailyTracker = () => {
 
   const [isSignedIn, setIsSignedIn] = useState(false);
   const [accessToken, setAccessToken] = useState(null);
+  const [tokenExpiry, setTokenExpiry] = useState(null);
   
   // let tokenClient;
   const tokenClientRef = useRef(null);
+
+  // Set and get cookie functions
+  const setCookie = (name, value, days) => {
+    let expires = "";
+    if (days) {
+      const date = new Date();
+      date.setTime(date.getTime() + days * 24 * 60 * 60 * 1000);
+      expires = "; expires=" + date.toUTCString();
+    }
+    document.cookie = name + "=" + (value || "") + expires + "; path=/";
+  };
+
+  const getCookie = (name) => {
+    const nameEQ = name + "=";
+    const ca = document.cookie.split(';');
+    for (let i = 0; i < ca.length; i++) {
+      let c = ca[i];
+      while (c.charAt(0) === ' ') c = c.substring(1, c.length);
+      if (c.indexOf(nameEQ) === 0) return c.substring(nameEQ.length, c.length);
+    }
+    return null;
+  };
+
+  const eraseCookie = (name) => {
+    document.cookie = name + "=; Max-Age=-99999999;";
+  };
 
   const initializeGapiClient = () => {
     window.gapi.client
@@ -47,18 +74,24 @@ const DailyTracker = () => {
           console.error('Error during authentication', tokenResponse);
           return;
         }
-        localStorage.setItem('accessToken', tokenResponse.access_token);
+        // Store the access token and expiry in a cookie (valid for the token's lifetime)
+        const tokenExpiryTime = Date.now() + tokenResponse.expires_in * 1000; // expires_in is in seconds
+        setCookie('accessToken', tokenResponse.access_token, tokenResponse.expires_in / (24 * 60 * 60)); // store cookie with token lifetime
+        setCookie('tokenExpiry', tokenExpiryTime, tokenResponse.expires_in / (24 * 60 * 60)); // store expiry time
         setIsSignedIn(true);
         setAccessToken(tokenResponse.access_token);
+        setTokenExpiry(tokenExpiryTime);
       },
     });
 
     // Request access token
-    const storedToken = localStorage.getItem('accessToken');
-    if (storedToken) {
+    const storedToken = getCookie('accessToken');
+    const storedExpiry = getCookie('tokenExpiry');
+    if (storedToken && storedExpiry && Date.now() < parseInt(storedExpiry)) {
       // If a token is found in localStorage, use it to set the user's state
       setIsSignedIn(true);
       setAccessToken(storedToken);
+      setTokenExpiry(parseInt(storedExpiry));
       window.gapi.client.setToken({ access_token: storedToken });
     } else if (window.gapi.client.getToken() === null) {
       tokenClientRef.current.requestAccessToken({ prompt: 'consent' });
@@ -66,6 +99,28 @@ const DailyTracker = () => {
       tokenClientRef.current.requestAccessToken({ prompt: '' });
     }
   }, []); // useCallback to stabilize reference
+
+  // Function to check if the access token is still valid
+  const checkTokenValidity = () => {
+    if (tokenExpiry && Date.now() >= tokenExpiry) {
+      // Token is expired, request a new one
+      tokenClientRef.current.requestAccessToken({ prompt: '' });
+    }
+  };
+
+  // Periodically check token validity
+  useEffect(() => {
+    // Check token validity when the component mounts
+    checkTokenValidity();
+
+    // Set an interval to periodically check token validity
+    const interval = setInterval(() => {
+      checkTokenValidity();
+    }, 5 * 60 * 1000); // Check every 5 minutes
+
+    // Cleanup the interval on component unmount
+    return () => clearInterval(interval);
+  }, [tokenExpiry]);
 
   useEffect(() => {
     window.gapi.load('client', () => {
@@ -90,8 +145,10 @@ const DailyTracker = () => {
         window.gapi.client.setToken('');
         setIsSignedIn(false);
         setAccessToken(null);
-        // Clear local storage to remove token
-        localStorage.removeItem('accessToken');
+        setTokenExpiry(null);
+        // Clear the cookie to remove token and expiry
+        eraseCookie('accessToken');
+        eraseCookie('tokenExpiry');
       });
     }
   };
